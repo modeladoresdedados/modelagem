@@ -5,7 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
-from sqlalchemy import create_engine, text
+from sqlalchemy import URL, create_engine, text
 from dotenv import load_dotenv
 
 # ==============================================================================
@@ -23,6 +23,7 @@ DB_PORT = int(os.getenv("DB_PORT", "3306"))
 DB_USER = os.getenv("DB_USER", "root")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "root")
 DB_NAME = os.getenv("DB_NAME", "dw_despesas")
+DB_SSL_CA = os.getenv("DB_SSL_CA", "").strip()
 
 st.set_page_config(
     page_title="Dashboard OLAP | DW Despesas Públicas TCE-PB 2025",
@@ -55,11 +56,31 @@ st.markdown(
 # ==============================================================================
 @st.cache_resource
 def get_engine():
-    conn_url = (
-        f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-        "?charset=utf8mb4"
+    conn_url = URL.create(
+        "mysql+pymysql",
+        username=DB_USER,
+        password=DB_PASSWORD,
+        host=DB_HOST,
+        port=DB_PORT,
+        database=DB_NAME,
+        query={"charset": "utf8mb4"},
     )
-    return create_engine(conn_url, pool_pre_ping=True, pool_recycle=3600)
+
+    connect_args = {}
+    if DB_SSL_CA:
+        ssl_ca_path = Path(DB_SSL_CA).expanduser()
+        if not ssl_ca_path.is_file():
+            raise FileNotFoundError(
+                f"O certificado CA configurado em DB_SSL_CA não foi encontrado: {ssl_ca_path}"
+            )
+        connect_args["ssl"] = {"ca": str(ssl_ca_path)}
+
+    return create_engine(
+        conn_url,
+        connect_args=connect_args,
+        pool_pre_ping=True,
+        pool_recycle=3600,
+    )
 
 
 @st.cache_data(ttl=600, show_spinner=False)
