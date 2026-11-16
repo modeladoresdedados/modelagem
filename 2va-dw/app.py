@@ -1,10 +1,13 @@
 import os
+import ssl
 from pathlib import Path
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
+from sqlalchemy import URL, create_engine, text
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 
@@ -18,11 +21,26 @@ if ENV_PATH.exists():
 else:
     load_dotenv()
 
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = int(os.getenv("DB_PORT", "3306"))
-DB_USER = os.getenv("DB_USER", "root")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "root")
-DB_NAME = os.getenv("DB_NAME", "dw_despesas")
+def get_setting(name: str, default: str = "") -> str:
+    value = os.getenv(name)
+    if value is not None:
+        return value
+
+    try:
+        secret_value = st.secrets.get(name)
+    except StreamlitSecretNotFoundError:
+        return default
+
+    return str(secret_value) if secret_value is not None else default
+
+
+DB_HOST = get_setting("DB_HOST", "localhost")
+DB_PORT = int(get_setting("DB_PORT", "3306"))
+DB_USER = get_setting("DB_USER", "root")
+DB_PASSWORD = get_setting("DB_PASSWORD", "root")
+DB_NAME = get_setting("DB_NAME", "dw_despesas")
+DB_SSL_CA = get_setting("DB_SSL_CA").strip()
+DB_SSL_CA_CONTENT = get_setting("DB_SSL_CA_CONTENT").strip()
 
 st.set_page_config(
     page_title="Dashboard OLAP | DW Despesas Públicas TCE-PB 2025",
@@ -59,7 +77,27 @@ def get_engine():
         f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
         "?charset=utf8mb4"
     )
-    return create_engine(conn_url, pool_pre_ping=True, pool_recycle=3600)
+
+    connect_args = {}
+    if DB_SSL_CA and DB_SSL_CA_CONTENT:
+        raise ValueError("Configure apenas uma das opções: DB_SSL_CA ou DB_SSL_CA_CONTENT.")
+
+    if DB_SSL_CA_CONTENT:
+        connect_args["ssl"] = ssl.create_default_context(cadata=DB_SSL_CA_CONTENT)
+    elif DB_SSL_CA:
+        ssl_ca_path = Path(DB_SSL_CA).expanduser()
+        if not ssl_ca_path.is_file():
+            raise FileNotFoundError(
+                f"O certificado CA configurado em DB_SSL_CA não foi encontrado: {ssl_ca_path}"
+            )
+        connect_args["ssl"] = {"ca": str(ssl_ca_path)}
+
+    return create_engine(
+        conn_url,
+        connect_args=connect_args,
+        pool_pre_ping=True,
+        pool_recycle=3600,
+    )
 
 
 @st.cache_data(ttl=600, show_spinner=False)
