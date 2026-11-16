@@ -73,18 +73,18 @@ st.markdown(
 # ==============================================================================
 @st.cache_resource
 def get_engine():
-    conn_url = (
-        f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-        "?charset=utf8mb4"
+    conn_url = URL.create(
+        "mysql+pymysql",
+        username=DB_USER,
+        password=DB_PASSWORD,
+        host=DB_HOST,
+        port=DB_PORT,
+        database=DB_NAME,
+        query={"charset": "utf8mb4"},
     )
 
     connect_args = {}
-    if DB_SSL_CA and DB_SSL_CA_CONTENT:
-        raise ValueError("Configure apenas uma das opções: DB_SSL_CA ou DB_SSL_CA_CONTENT.")
-
-    if DB_SSL_CA_CONTENT:
-        connect_args["ssl"] = ssl.create_default_context(cadata=DB_SSL_CA_CONTENT)
-    elif DB_SSL_CA:
+    if DB_SSL_CA:
         ssl_ca_path = Path(DB_SSL_CA).expanduser()
         if not ssl_ca_path.is_file():
             raise FileNotFoundError(
